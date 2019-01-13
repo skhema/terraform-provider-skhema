@@ -18,6 +18,7 @@ modules-dev/
 *.iml
 *.test
 *.iml
+terraform-provider-skhema*
 
 # Test exclusions
 !command/test-fixtures/**/*.tfstate

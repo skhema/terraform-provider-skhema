@@ -1,0 +1,231 @@
+#!/usr/bin/env node
+
+const path = require('path');
+const fs = require('fs');
+
+const dataDir = path.join(process.env.HOME, '.skhema.d');
+
+function createResolver(root) {
+    return (s) => {
+        /*let tokens, ns, name, rev;
+        tokens = urn.split('/');
+        ns = tokens[0];
+
+        tokens = tokens[1].split('@');
+        name = tokens[0];
+        rev = tokens[1] || 'latest';*/
+
+        // console.log(s);
+
+        const fp = path.join(root, s.namespace, s.name, `${s.revision}.json`);
+
+        const contents = fs.readFileSync(fp);
+        return JSON.parse(contents);
+    };
+}
+
+const definition = {
+    'openapi': '3.0.0',
+    'info': {
+        'title': '',
+        'version': ''
+    },
+    'paths': {},
+    'components': {
+        'schemas': {}
+    }
+};
+
+const PRIMITIVES = ['string', 'integer'];
+
+function getQualifiedName(s) {
+    return [
+        s.namespace,
+        s.name
+    ].join('.');
+}
+
+function getRef(s) {
+    return `#/components/schemas/${getQualifiedName(s)}`;
+}
+
+function isComplex(type) {
+    return !PRIMITIVES.includes(type);
+}
+
+function main() {
+    const root = path.join(process.env.HOME, '.skhema.d');
+    const resolve = createResolver(root);
+
+    let tokens, ns, name, rev;
+    tokens = process.argv[2].split('/');
+    ns = tokens[0];
+
+    tokens = tokens[1].split('@');
+    name = tokens[0];
+    rev = tokens[1] || 'latest';
+
+    const api = resolve({
+        namespace: ns,
+        name: name,
+        revision: rev
+    });
+
+    function resolveType(t) {
+        if (isComplex(t.type)) {
+            return getRef(t.schema);
+        }
+
+        return t;
+    }
+
+    function getOpenapiType(t) {
+        return {
+            name: getQualifiedName(t.metadata),
+            schema: {
+                properties: t.fields.reduce((acc, f) => {
+                    acc[f.name] = {
+                        type: resolveType(f).type
+                    };
+
+                    return acc;
+                }, {})
+            }
+        };
+    }
+
+    function getSchema(t) {
+        if (isComplex(t.type)) {
+            if (t.type == 'record') {
+                return {
+                    $ref: getRef(t.schema)
+                };
+            }
+
+            if (t.type == 'array') {
+                return {
+                    type: 'array',
+                    items: {
+                        $ref: getRef(t.schema)
+                    }
+                };
+            }
+        }
+
+        return {
+            type: t
+        };
+    }
+
+    function resolveComponents(seq) {
+        return seq
+            .filter((i) => isComplex(i.type))
+            .map((i) => {
+                return resolve(i.schema)
+            });
+    }
+
+    const ops = api.operations.reduce((ops, op) => {
+        const operations = ops.operations.concat(op);
+        const components = ops.components
+              .concat(resolveComponents(op.params || []))
+              .concat(resolveComponents(op.consumables || []))
+              .concat(resolveComponents(op.producibles || []));
+
+        return {
+            operations: operations,
+            components: components,
+        };
+    }, {
+        operations: [],
+        components: [],
+    });
+
+    function getMime(format) {
+        if (format == 'json') {
+            return 'application/json';
+        }
+
+        return 'application/json';
+    }
+
+    function getRequestBody(consumables) {
+        return {
+            content: consumables.reduce((acc, c) => {
+                const mime = getMime(c.format);
+
+                acc[mime] = {
+                    schema: getSchema(c)
+                };
+
+                return acc;
+            }, {})
+        };
+    }
+
+    function getParameters(params) {
+        return params.map((p) => {
+            return {
+                name: p.name,
+                'in': p.segment,
+                schema: getSchema(p.type)
+            };
+        });
+    }
+
+    function getResponses(producibles) {
+        return producibles.reduce((acc, p) => {
+            const status = acc[p.status] || {
+                description: '',
+                content: {}
+            };
+
+            const mime = getMime(p.format);
+            status.content[mime] = {
+                schema: getSchema(p)
+            };
+
+            acc[p.status] = status;
+
+            return acc;
+        }, {});
+    }
+
+    const spec = { ...definition };
+
+    spec.paths = ops.operations.reduce((paths, op) => {
+        const method = {
+            operationId: op.name
+        };
+
+        if (op.params) {
+            method.parameters = getParameters(op.params);
+        }
+
+        if (op.consumables) {
+            method.requestBody = getRequestBody(op.consumables);
+        }
+
+        method.responses = getResponses(op.producibles);
+
+        const path = paths[op.path] || {};
+
+        path[op.method] = method;
+        paths[op.path] = path;
+
+        return paths;
+    }, {});
+
+    spec.components = spec.components || {};
+    spec.components.schemas = ops.components.reduce((types, type) => {
+        const schema = getOpenapiType(type);
+
+        types[schema.name] = schema.schema;
+
+        return types;
+    }, {});
+
+    console.log(JSON.stringify(spec, null, 4));
+}
+
+main();

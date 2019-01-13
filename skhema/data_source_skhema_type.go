@@ -16,13 +16,22 @@ func dataSourceSkhemaType() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-			"type": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
 			"namespace": {
 				Type:     schema.TypeString,
 				Required: true,
+			},
+			"revision": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "latest",
+			},
+			"schema": {
+				Type:     schema.TypeMap,
+				Computed: true,
+			},
+			"urn": {
+				Type:     schema.TypeString,
+				Computed: true,
 			},
 		},
 	}
@@ -32,7 +41,13 @@ func dataSourceSkhemaTypeRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Env).client
 
 	resource := &skhema.Type{}
-	err := client.DescribeTypeByNamespace(d.Get("namespace").(string), d.Get("name").(string), resource)
+	filter := &skhema.TypeLookupFilter{
+		Namespace: d.Get("namespace").(string),
+		Name:      d.Get("name").(string),
+		Revision:  d.Get("revision").(string),
+	}
+
+	err := client.Types.Describe(filter, resource)
 
 	if err != nil {
 		log.Println(err)
@@ -40,11 +55,17 @@ func dataSourceSkhemaTypeRead(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
-	d.SetId(resource.Name)
+	d.SetId(resource.Metadata.GetId())
 
-	d.Set("namespace", resource.Namespace)
-	d.Set("name", resource.Name)
-	d.Set("type", resource.Type)
+	d.Set("namespace", resource.Metadata.Namespace)
+	d.Set("name", resource.Metadata.Name)
+	d.Set("revision", resource.Metadata.Revision)
+	d.Set("urn", resource.Metadata.GetUrn())
+	d.Set("schema", map[string]string{
+		"namespace": resource.Metadata.Namespace,
+		"name":      resource.Metadata.Name,
+		"revision":  resource.Metadata.Revision,
+	})
 
 	return nil
 }

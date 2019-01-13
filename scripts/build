@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -exo pipefail
+
+package=$1
+
+if [[ -z "$package" ]]; then
+  echo "usage: $0 <package-name>"
+  exit 1
+fi
+
+tokens=(${package//\// })
+package_name=${tokens[2]}
+
+platforms=("linux/amd64" "darwin/amd64" "windows/amd64")
+
+for platform in "${platforms[@]}"
+do
+    tokens=(${platform//\// })
+
+    GOOS=${tokens[0]}
+    GOARCH=${tokens[1]}
+
+    output_name=$package_name'-'$GOOS'-'$GOARCH
+    if [ $GOOS = "windows" ]; then
+        output_name+='.exe'
+    fi
+
+    env GOOS=$GOOS GOARCH=$GOARCH go build -o $output_name $package
+
+    if [ $? -ne 0 ]; then
+        echo 'An error has occurred! Aborting the script execution...'
+        exit 1
+    fi
+done

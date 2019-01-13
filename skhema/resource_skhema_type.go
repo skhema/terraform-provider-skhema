@@ -25,6 +25,10 @@ func resourceSkhemaType() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"items": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 			"field": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -45,49 +49,63 @@ func resourceSkhemaType() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"revision": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"urn": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 	}
 }
 
 func resourceSkhemaTypeObject(d *schema.ResourceData) *skhema.Type {
 	obj := &skhema.Type{
-		Name: d.Get("name").(string),
+		Metadata: &skhema.Metadata{
+			Name:     d.Get("name").(string),
+			Revision: "0",
+		},
 		Type: d.Get("type").(string),
 	}
 
-	if namespace, ok := d.GetOk("namespace"); ok {
-		obj.Namespace = namespace.(string)
+	// TODO: check whether struct (field) or array (items)
+	if items, ok := d.GetOk("items"); ok {
+		obj.Items = items.(string)
 	}
 
 	if fields, ok := d.GetOk("field"); ok {
-		obj.Fields = newFieldList(fields.([]interface{}))
+		obj.Fields = newTypeFieldsList(fields.([]interface{}))
+	}
+
+	if revision, ok := d.GetOk("revision"); ok {
+		obj.Metadata.Revision = revision.(string)
 	}
 
 	return obj
 }
 
 func resourceSkhemaTypeCreate(d *schema.ResourceData, meta interface{}) error {
-	id := d.Get("name").(string)
+	client := meta.(*Env).client
 	resource := resourceSkhemaTypeObject(d)
 
-	client := meta.(*Env).client
-	err := client.CreateType(id, resource)
-
+	err := client.Types.Create(resource)
 	if err != nil {
-		log.Panic("Resource has not been created")
+		log.Println(err)
 		return err
 	}
 
-	d.SetId(id)
+	d.SetId(resource.Metadata.GetId())
 
 	return resourceSkhemaTypeRead(d, meta)
 }
 
 func resourceSkhemaTypeRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Env).client
-
 	resource := &skhema.Type{}
-	err := client.DescribeType(d.Id(), resource)
+
+	err := client.Types.DescribeById(d.Id(), &resource)
 
 	if err != nil {
 		log.Println(err)
@@ -95,15 +113,28 @@ func resourceSkhemaTypeRead(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
-	d.Set("namespace", resource.Namespace)
-	d.Set("name", resource.Name)
+	d.Set("namespace", resource.Metadata.Namespace)
+	d.Set("name", resource.Metadata.Name)
+	d.Set("revision", resource.Metadata.Revision)
+	d.Set("urn", resource.Metadata.GetUrn())
 	d.Set("type", resource.Type)
-	d.Set("field", flattenFieldList(resource.Fields))
+	d.Set("field", flattenTypeFieldsList(resource.Fields))
 
 	return nil
 }
 
 func resourceSkhemaTypeUpdate(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Env).client
+	resource := resourceSkhemaTypeObject(d)
+
+	err := client.Types.Update(resource)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	d.SetId(resource.Metadata.GetId())
+
 	return resourceSkhemaTypeRead(d, meta)
 }
 

@@ -14,14 +14,22 @@ func Provider() terraform.ResourceProvider {
 				Required:    true,
 				Description: descriptions["namespace"],
 			},
+			"bucket": {
+				Type:        schema.TypeString,
+				Required:    true,
+				DefaultFunc: schema.EnvDefaultFunc("SKHEMA_BUCKET", "TODO"),
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"skhema_type": resourceSkhemaType(),
+			"skhema_type":    resourceSkhemaType(),
+			"skhema_api":     resourceSkhemaApi(),
+			"skhema_service": resourceSkhemaService(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
 			"skhema_type": dataSourceSkhemaType(),
+			"skhema_api":  dataSourceSkhemaApi(),
 		},
 	}
 
@@ -42,6 +50,7 @@ func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 	return func(d *schema.ResourceData) (interface{}, error) {
 		config := Config{
 			Namespace: d.Get("namespace").(string),
+			Bucket:    d.Get("bucket").(string),
 		}
 
 		meta, err := config.NewEnv()
