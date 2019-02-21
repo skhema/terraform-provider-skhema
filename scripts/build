@@ -2,15 +2,12 @@
 
 set -exo pipefail
 
-package=$1
+package_name=$1
 
-if [[ -z "$package" ]]; then
+if [[ -z "$package_name" ]]; then
   echo "usage: $0 <package-name>"
   exit 1
 fi
-
-tokens=(${package//\// })
-package_name=${tokens[2]}
 
 platforms=("linux/amd64" "darwin/amd64" "windows/amd64")
 
@@ -26,7 +23,7 @@ do
         output_name+='.exe'
     fi
 
-    env GOOS=$GOOS GOARCH=$GOARCH go build -o $output_name $package
+    env GOOS=$GOOS GOARCH=$GOARCH go build -o $output_name
 
     if [ $? -ne 0 ]; then
         echo 'An error has occurred! Aborting the script execution...'
